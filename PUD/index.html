@@ -4,25 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Buku Kas Pasar — PUD Pasar Kota Medan</title>
-<!-- Link ke Manifest PWA -->
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#1F3D2E">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="apple-touch-icon" href="icon-192.png">
-
-<script>
-  // Daftarkan Service Worker secara otomatis
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js')
-        .then(reg => console.log('Service Worker terdaftar!', reg))
-        .catch(err => console.log('Pendaftaran Service Worker gagal: ', err));
-    });
-  }
-</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght=500;600;700&family=EB+Garamond:ital,wght=0,400;0,500;0,600;1,400&family=Courier+Prime:wght=400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
 <!-- QR Code Library CDN -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
@@ -197,6 +180,8 @@ tr:hover td{background:rgba(168,121,43,0.06);}
   letter-spacing:1.5px; transform:rotate(-11deg); opacity:.88; mix-blend-mode:multiply; line-height:1.25;
   flex-shrink:0;
 }
+.stamp.mini{width:52px; height:52px; font-size:9px; border-width:2px;}
+.stamp.void{border-color:#8a8378; color:#8a8378; border-style:dashed;}
 
 /* Modal & QR Box */
 .modal-bg{position:fixed; inset:0; background:rgba(18,15,8,0.6); display:flex; align-items:center; justify-content:center; z-index:50; padding:20px;}
@@ -217,67 +202,18 @@ tr:hover td{background:rgba(168,121,43,0.06);}
 
 .qr-container { display:flex; justify-content:center; align-items:center; margin:20px 0; background:#fff; padding:15px; border:1px dashed var(--brass); }
 
-/* ========================================================
-   CSS PERBAIKAN CETAK / PRINT (JAMINAN ANTI LAG & ANTI KOSONG)
-   ======================================================== */
-#print-section { display: none; }
-
-@media print {
-  html, body {
-    background: #ffffff !important;
-    color: #000000 !important;
-    font-family: 'EB Garamond', serif !important;
-  }
-  /* Sembunyikan pembungkus aplikasi agar tidak terjadi penumpukan/render ulang */
-  #app { display: none !important; }
-  
-  /* Tampilkan area khusus cetak sebagai satu-satunya elemen di halaman */
-  #print-section { 
-    display: block !important; 
-    width: 100% !important; 
-    position: absolute; 
-    top: 0; 
-    left: 0; 
-  }
-  
-  /* Sembunyikan elemen dekoratif tombol dari cetakan */
-  .no-print, button, .receipt-actions, .receipt-close { display: none !important; }
-  
-  /* Aturan Cetak Struk agar pas di kertas */
-  .receipt {
-    border: none !important;
-    box-shadow: none !important;
-    background: #fff !important;
-    margin: 0 auto !important;
-    padding: 10px !important;
-    width: 100% !important;
-    max-width: 100% !important;
-  }
-  
-  /* Aturan Tabel Laporan */
-  table { 
-    width: 100% !important; 
-    border-collapse: collapse !important; 
-    border: 1px solid #000 !important; 
-    margin-top: 15px !important;
-  }
-  th, td { 
-    border: 1px solid #000 !important; 
-    padding: 8px 6px !important; 
-    color: #000 !important; 
-  }
+/* Print */
+@media print{
+  body *{visibility:hidden;}
+  .printable-area, .printable-area *{visibility:visible;}
+  .printable-area{position:absolute; top:0; left:0; width:100%; padding:20px; background:#fff;}
+  .no-print{display:none !important;}
 }
 .footer-note{text-align:center; font-size:12px; color:var(--ink-soft); padding:16px; font-style:italic;}
 </style>
 </head>
 <body>
-
-<!-- Kontainer Aplikasi Utama (Layar Browser) -->
 <div id="app"></div>
-
-<!-- Kontainer Mesin Printer Sistem (Terpisah di Root untuk Kecepatan Cetak) -->
-<div id="print-section"></div>
-
 <script>
 /* ===================== Konstanta ===================== */
 const BIAYA_KIOS = 20000;
@@ -286,13 +222,15 @@ const BULAN_ID = ['','Januari','Februari','Maret','April','Mei','Juni','Juli','A
 
 /* ===================== Storage helpers ===================== */
 const LOCAL_PREFIX = 'pasar_kios__';
-let hasCloudStorage = (typeof window !== 'undefined') && !!window.storage && typeof window.storage.get === 'function';
+let hasCloudStorage = (typeof window !== 'undefined') && !!window.storage
+  && typeof window.storage.get === 'function';
 
 async function ujiCloudStorage(){
   if(!hasCloudStorage) return;
   try{
     await window.storage.set('__healthcheck__', JSON.stringify({ok:true}), true);
   }catch(e){
+    console.warn('Penyimpanan cloud tidak tersedia, beralih ke localStorage:', e);
     hasCloudStorage = false;
   }
 }
@@ -309,9 +247,18 @@ async function dbGet(key, def=null){
 }
 async function dbSet(key, value){
   try{
-    if(hasCloudStorage){ return await window.storage.set(key, JSON.stringify(value), true); }
+    if(hasCloudStorage){
+      return await window.storage.set(key, JSON.stringify(value), true);
+    }
     localStorage.setItem(LOCAL_PREFIX + key, JSON.stringify(value));
-    return { key, value };
+    return { key, value, shared:false };
+  }catch(e){ console.error('storage set error', e); return null; }
+}
+async function dbDelete(key){
+  try{
+    if(hasCloudStorage){ return await window.storage.delete(key, true); }
+    localStorage.removeItem(LOCAL_PREFIX + key);
+    return { key, deleted:true };
   }catch(e){ return null; }
 }
 async function dbList(prefix){
@@ -323,7 +270,9 @@ async function dbList(prefix){
     const keys = [];
     for(let i=0; i<localStorage.length; i++){
       const k = localStorage.key(i);
-      if(k && k.startsWith(LOCAL_PREFIX + prefix)){ keys.push(k.substring(LOCAL_PREFIX.length)); }
+      if(k && k.startsWith(LOCAL_PREFIX + prefix)){
+        keys.push(k.substring(LOCAL_PREFIX.length));
+      }
     }
     return keys;
   }catch(e){ return []; }
@@ -345,28 +294,30 @@ function enumerateMonths(startYM){
 }
 function nowTanggalJam(){
   const d = new Date();
-  return {
-    tanggal: d.toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'}),
-    jam: d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),
-    iso: d.toISOString()
-  };
+  const tgl = d.toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'});
+  const jam = d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  return {tanggal:tgl, jam:jam, iso:d.toISOString()};
 }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /* ===================== State ===================== */
 let state = { screen:'cover', session:null, authTab:'login', err:'', pengurusFilter:'', laporanBulan: ymNow(), strukPayload:null, daftarKebersihan:true, pengurusActiveTab:'pedagang' };
+
 const app = document.getElementById('app');
 
-/* ===================== Init ===================== */
+/* ===================== Init / seed ===================== */
 async function initApp(){
   await ujiCloudStorage();
   const admin = await dbGet('pengurus:admin');
-  if(!admin){ await dbSet('pengurus:admin', {username:'admin_pud', password:'pasar123', nama:'Petugas PUD Pasar Kota Medan'}); }
+  if(!admin){
+    await dbSet('pengurus:admin', {username:'admin_pud', password:'pasar123', nama:'Petugas PUD Pasar Kota Medan'});
+  }
   const counter = await dbGet('pedagang_counter');
   if(counter===null){ await dbSet('pedagang_counter', 0); }
   goto('cover');
 }
 
+/* ===================== Router ===================== */
 function goto(screen, extra){
   state.screen = screen; state.err='';
   if(extra) Object.assign(state, extra);
@@ -381,10 +332,12 @@ async function drawScreen(){
     case 'pedagang-dash': await drawPedagangDash(); break;
     case 'pengurus-dash': await drawPengurusDash(); break;
   }
-  app.classList.remove('fade-in'); void app.offsetWidth; app.classList.add('fade-in');
+  app.classList.remove('fade-in'); void app.offsetWidth;
+  app.classList.add('fade-in');
+  window.scrollTo(0,0);
 }
 
-/* ===================== Templates Auth & Cover ===================== */
+/* ===================== Cover ===================== */
 function tplCover(){
   return `
   <div class="cover">
@@ -398,10 +351,14 @@ function tplCover(){
         <button class="role-btn" onclick="goto('pedagang-auth')">Pedagang<small>Bayar retribusi &amp; lihat struk</small></button>
         <button class="role-btn" onclick="goto('pengurus-auth')">Pengurus<small>PUD Pasar Kota Medan</small></button>
       </div>
+      <div style="margin-top:26px; font-size:11px; letter-spacing:1px; color:var(--paper-2); opacity:.6; font-family:'Courier Prime',monospace;">
+        Mode penyimpanan: ${hasCloudStorage ? 'Cloud (window.storage)' : 'Lokal (localStorage browser ini)'}
+      </div>
     </div>
   </div>`;
 }
 
+/* ===================== Pedagang Auth ===================== */
 function tplPedagangAuth(){
   const tab = state.authTab;
   return `
@@ -421,19 +378,21 @@ function tplPedagangAuth(){
         <div class="field"><label>ID Pedagang</label><input id="in-id" placeholder="Contoh: PD0001" class="mono"></div>
         <div class="field"><label>Kata Sandi</label><input id="in-pass" type="password" placeholder="Kata sandi"></div>
         <button class="btn-primary" onclick="doPedagangLogin()">Masuk</button>
+        <div class="hint">Belum punya ID Pedagang? Gunakan tab <b>Daftar</b> di atas untuk membuat akun dan mendapatkan ID.</div>
       ` : `
         <div class="field"><label>Nama Lengkap</label><input id="d-nama" placeholder="Nama pedagang"></div>
         <div class="field"><label>Nomor Kios</label><input id="d-kios" placeholder="Contoh: A-12"></div>
         <div class="field">
           <label>Layanan Kebersihan Bulanan</label>
           <div class="toggle-row">
-            <div class="toggle-opt ${state.daftarKebersihan? 'selected':''}" onclick="state.daftarKebersihan=true; goto('pedagang-auth')">Ikut</div>
-            <div class="toggle-opt ${!state.daftarKebersihan? 'selected':''}" onclick="state.daftarKebersihan=false; goto('pedagang-auth')">Tidak Ikut</div>
+            <div class="toggle-opt ${state.daftarKebersihan? 'selected':''}" onclick="state.daftarKebersihan=true; goto('pedagang-auth')">Ikut (Rp 10.000/bln)</div>
+            <div class="toggle-opt ${!state.daftarKebersihan? 'selected':''}" onclick="state.daftarKebersihan=false; goto('pedagang-auth')">Tidak Ikut (Rp 0)</div>
           </div>
         </div>
         <div class="field"><label>Kata Sandi</label><input id="d-pass" type="password" placeholder="Buat kata sandi"></div>
         <div class="field"><label>Ulangi Kata Sandi</label><input id="d-pass2" type="password" placeholder="Ulangi kata sandi"></div>
-        <button class="btn-primary" onclick="doPedagangDaftar()">Daftar</button>
+        <button class="btn-primary" onclick="doPedagangDaftar()">Daftar &amp; Buat ID Pedagang</button>
+        <div class="hint">Biaya kios pokok Rp 20.000/bulan berlaku untuk semua pedagang. Layanan kebersihan bersifat pilihan.</div>
       `}
     </div>
   </div>`;
@@ -449,31 +408,65 @@ async function doPedagangDaftar(){
   let counter = await dbGet('pedagang_counter', 0);
   counter += 1;
   const id = 'PD' + String(counter).padStart(4,'0');
-  await dbSet('pedagang:'+id, { id, nama, no_kios:kios, password:pass, kebersihan: state.daftarKebersihan, terdaftar_bulan: ymNow() });
+  const data = { id, nama, no_kios:kios, password:pass, kebersihan: state.daftarKebersihan, terdaftar_bulan: ymNow(), dibuat: new Date().toISOString() };
+  await dbSet('pedagang:'+id, data);
   await dbSet('pedagang_counter', counter);
-  state.authTab='login'; state.err=''; goto('pedagang-auth');
-  alert('Pendaftaran Berhasil! ID Pedagang Anda: ' + id);
+  state.authTab='login'; state.err='';
+  goto('pedagang-auth');
+  const wrap = document.querySelector('.auth-card');
+  wrap.insertAdjacentHTML('afterbegin', `<div class="id-reveal">${id}</div>`);
+  wrap.insertAdjacentHTML('afterbegin', `<div class="success-box">Pendaftaran berhasil! Ini ID Pedagang Anda — simpan baik-baik:</div>`);
 }
 
 async function doPedagangLogin(){
   const idInput = document.getElementById('in-id').value.trim().toUpperCase();
   const passInput = document.getElementById('in-pass').value.trim();
-  const data = await dbGet('pedagang:' + idInput);
-  if(!data || String(data.password) !== passInput){ state.err = 'ID Pedagang atau Sandi Salah!'; return goto('pedagang-auth'); }
+  
+  if(!idInput || !passInput) {
+    state.err = '❌ Kolom tidak boleh kosong! Silakan isi ID dan Kata Sandi Anda.';
+    goto('pedagang-auth');
+    efekGuncang();
+    return;
+  }
+
+  let data = await dbGet('pedagang:' + idInput);
+  
+  if (!data) {
+    const allKeys = await dbList('pedagang:');
+    for (const key of allKeys) {
+      if (key.toUpperCase() === idInput) {
+        data = await dbGet(key);
+        break;
+      }
+    }
+  }
+  
+  if(!data || String(data.password).trim() !== passInput){ 
+    state.err = '⚠️ ID Pedagang atau Kata Sandi SALAH! Periksa kembali kartu ID Anda dan silakan ulang lagi.'; 
+    goto('pedagang-auth'); 
+    efekGuncang();
+    return;
+  }
+  
   state.session = { role:'pedagang', id: data.id };
+  state.err = '';
   goto('pedagang-dash');
 }
 
+/* ===================== Pengurus Auth ===================== */
 function tplPengurusAuth(){
   return `
   <button class="back-link no-print" onclick="goto('cover')">‹ Kembali</button>
   <div class="auth-wrap">
     <div class="auth-card">
-      <div class="auth-header"><div class="badge">Sistem Pengurus</div><h2>Otoritas PUD Pasar</h2></div>
+      <div class="auth-header">
+        <div class="badge">Sistem Pengurus</div>
+        <h2>Otoritas PUD Pasar</h2>
+      </div>
       ${state.err? `<div class="error-box">${esc(state.err)}</div>`:''}
-      <div class="field"><label>Username</label><input id="p-user" class="mono"></div>
-      <div class="field"><label>Kata Sandi</label><input id="p-pass" type="password"></div>
-      <button class="btn-primary" onclick="doPengurusLogin()">Masuk</button>
+      <div class="field"><label>Nama Pengguna</label><input id="p-user" placeholder="Nama pengguna" class="mono"></div>
+      <div class="field"><label>Kata Sandi</label><input id="p-pass" type="password" placeholder="Kata sandi"></div>
+      <button class="btn-primary" onclick="doPengurusLogin()">Otorisasi Masuk</button>
     </div>
   </div>`;
 }
@@ -481,17 +474,55 @@ function tplPengurusAuth(){
 async function doPengurusLogin(){
   const user = document.getElementById('p-user').value.trim();
   const pass = document.getElementById('p-pass').value.trim();
-  const admin = await dbGet('pengurus:admin');
-  if(admin.username !== user || admin.password !== pass){ state.err = 'Kredensial salah!'; return goto('pengurus-auth'); }
+  
+  if(!user || !pass) {
+    state.err = '❌ Nama pengguna dan kata sandi tidak boleh kosong!';
+    goto('pengurus-auth');
+    efekGuncang();
+    return;
+  }
+
+  let admin = await dbGet('pengurus:admin');
+  if(!admin){
+    admin = {username:'admin_pud', password:'pasar123', nama:'Petugas PUD Pasar Kota Medan'};
+    await dbSet('pengurus:admin', admin);
+  }
+  
+  if(String(admin.username).trim() !== user || String(admin.password).trim() !== pass){ 
+    state.err = '⚠️ Login Gagal! Nama pengguna atau kata sandi salah. Silakan coba ulang lagi.'; 
+    goto('pengurus-auth'); 
+    efekGuncang();
+    return;
+  }
+  
   state.session = { role:'pengurus' };
+  state.err = '';
   state.pengurusActiveTab = 'pedagang';
   goto('pengurus-dash');
 }
 
-function logout(){ state.session = null; goto('cover'); }
+function logout(){
+  state.session = null;
+  state.err = '';
+  goto('cover');
+}
+
+function efekGuncang() {
+  setTimeout(() => {
+    const card = document.querySelector('.auth-card');
+    if (card) {
+      card.style.transform = 'translateX(10px)';
+      card.style.transition = 'all 0.1s ease';
+      setTimeout(() => card.style.transform = 'translateX(-10px)', 50);
+      setTimeout(() => card.style.transform = 'translateX(10px)', 100);
+      setTimeout(() => card.style.transform = 'translateX(0)', 150);
+    }
+  }, 50);
+}
 
 /* ===================== Pedagang Dashboard ===================== */
 async function drawPedagangDash(){
+  app.innerHTML = `<div class="empty-state">Memuat data pedagang…</div>`;
   const id = state.session.id;
   const p = await dbGet('pedagang:'+id);
   if(!p){ logout(); return; }
@@ -506,67 +537,163 @@ async function drawPedagangDash(){
   for(const m of months){ payments[m] = await dbGet('payment:'+id+'-'+m); }
 
   const unpaidMonths = months.filter(m => !payments[m]);
-  const totalBulanan = BIAYA_KIOS + (p.kebersihan ? BIAYA_KEBERSIHAN : 0);
+  const biayaKios = BIAYA_KIOS;
+  const biayaKebersihan = p.kebersihan ? BIAYA_KEBERSIHAN : 0;
+  const totalBulanan = biayaKios + biayaKebersihan;
+  const totalTunggakan = unpaidMonths.length * totalBulanan;
 
   const historyRows = months.slice().reverse().filter(m=>payments[m]).map(m=>{
     const pay = payments[m];
     return `<tr>
       <td><b>${formatBulanYM(m)}</b></td>
-      <td><span class="mono">${rupiah(pay.total)}</span><br><small style="color:var(--brass);">${esc(pay.metode_pembayaran)}</small></td>
-      <td class="mono" style="font-size:12px;">${pay.tanggal}<br>${pay.jam}</td>
-      <td><span class="tag paid">LUNAS</span></td>
-      <td><button class="link-btn" onclick='bukaStruk("${m}")'>Buka Struk</button></td>
+      <td><span class="mono">${rupiah(pay.total)}</span><br><small style="color:var(--brass); font-weight:600;">${esc(pay.metode_pembayaran || 'QRIS')}</small></td>
+      <td class="mono" style="font-size:12px; color:var(--ink-soft);">${pay.tanggal}<br>${pay.jam}</td>
+      <td><span class="tag paid" style="background:#e2f7eb; color:#11754c; padding:4px 8px; border-radius:4px; font-weight:bold;">LUNAS</span></td>
+      <td><button class="link-btn" style="text-decoration:underline; color:var(--ledger-green); font-weight:600;" onclick='bukaStruk(${JSON.stringify(m)})'>Lihat Struk</button></td>
     </tr>`;
   }).join('');
 
   const tunggakanRows = unpaidMonths.map(m=>`
-    <tr>
-      <td><strong>${formatBulanYM(m)}</strong></td>
-      <td class="mono">${rupiah(totalBulanan)}</td>
+    <tr style="background: #fffdf7;">
+      <td><strong style="color:#b25e00;">${formatBulanYM(m)}</strong></td>
+      <td class="mono" style="font-weight:bold;">${rupiah(totalBulanan)}</td>
       <td>
-        <select id="select-payment-${m}">
-          <option value="QRIS Dinamis">QRIS Dinamis</option>
-          <option value="Virtual Account">Virtual Account</option>
+        <select id="select-payment-${m}" style="padding: 6px 10px; background: #fff; border: 1px solid #ccc; border-radius:4px; font-size:14px; width:100%; max-width:200px;">
+          <option value="QRIS Dinamis">QRIS (Otomatis)</option>
+          <option value="Transfer Bank VA">Virtual Account Bank</option>
+          <option value="E-Wallet Dana">Dana</option>
+          <option value="E-Wallet OVO">OVO</option>
+          <option value="E-Wallet GoPay">GoPay</option>
         </select>
       </td>
-      <td><button class="pay-btn" onclick="initiasiPembayaran('${m}')">Bayar</button></td>
+      <td><button class="pay-btn" style="background:#d4af37; color:#000; padding:6px 14px; font-weight:bold; border:none; border-radius:4px;" onclick="initiasiPembayaran('${m}')">Bayar Sekarang</button></td>
     </tr>`).join('');
 
   app.innerHTML = `
-  <div class="topbar">
-    <div class="brand">Buku Kas Pasar <span>| Portal Pedagang</span></div>
-    <div class="who">${esc(p.nama)} (${p.id}) <button class="logout-btn" onclick="logout()">Keluar</button></div>
+  <div class="topbar" style="background:var(--ledger-green); padding:15px 20px; border-bottom:2px solid var(--ink);">
+    <div class="brand" style="font-weight:bold; font-size:18px;">Buku Kas Pasar <span style="font-weight:normal; font-size:14px; opacity:0.7;">| Portal Pedagang</span></div>
+    <div class="who" style="font-size:14px;">
+      Pedagang: <b>${esc(p.nama)}</b> (${p.id}) &middot; Kios: <b>${esc(p.no_kios)}</b>
+      <button class="logout-btn" style="margin-left:15px; background:#c93b2b; color:#fff; border:none; padding:4px 10px; border-radius:4px;" onclick="logout()">Keluar</button>
+    </div>
   </div>
-  <div class="content">
-    <div class="grid">
+
+  <div class="content" style="padding:20px; max-width:1200px; margin:0 auto;">
+    <div class="stat-strip" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap:15px; margin-bottom:25px;">
+      <div class="stat-box" style="background:#f4f1ea; padding:15px; border:1px solid var(--paper-line); border-radius:6px; color:var(--ink);">
+        <div class="lbl" style="font-size:13px; color:var(--ink-soft); text-transform:uppercase;">Wajib Bayar / Bulan</div>
+        <div class="num" style="font-size:22px; font-weight:bold;">${rupiah(totalBulanan)}</div>
+      </div>
+      <div class="stat-box" style="background:#fffdf7; padding:15px; border:1px solid #f2e0bd; border-radius:6px; color:var(--ink);">
+        <div class="lbl" style="font-size:13px; color:#b25e00; text-transform:uppercase;">Belum Dibayar</div>
+        <div class="num" style="font-size:22px; font-weight:bold; color:#b25e00;">${unpaidMonths.length} Bulan</div>
+      </div>
+      <div class="stat-box" style="background:${totalTunggakan > 0 ? '#fdf3f2' : '#e2f7eb'}; padding:15px; border:1px solid ${totalTunggakan > 0 ? '#f5c6c2' : '#c3ebd4'}; border-radius:6px; color:var(--ink);">
+        <div class="lbl" style="font-size:13px; color:${totalTunggakan > 0 ? '#c93b2b' : '#11754c'}; text-transform:uppercase;">Total Tunggakan</div>
+        <div class="num" style="font-size:22px; font-weight:bold; color:${totalTunggakan > 0 ? '#c93b2b' : '#11754c'};">${rupiah(totalTunggakan)}</div>
+      </div>
+    </div>
+
+    <div class="grid" style="display:grid; grid-template-columns: 2fr 1fr; gap:20px;">
       <div>
-        <div class="card">
-          <div class="card-title">Tagihan Kios</div>
-          <table><tbody>${tunggakanRows || '<tr><td colspan="4" style="text-align:center;color:green;">Semua retribusi lunas!</td></tr>'}</tbody></table>
+        <div class="card" style="background:#fff; border:1px solid var(--paper-line); padding:20px; border-radius:6px; margin-bottom:20px;">
+          <div class="card-title" style="font-weight:bold; font-size:16px; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:8px; color:var(--ledger-green)">⚠️ Tagihan yang Harus Dilunasi</div>
+          <table style="width:100%; border-collapse:collapse;">
+            <thead>
+              <tr style="text-align:left; border-bottom:2px solid #ddd; font-size:14px; color:var(--ink-soft);">
+                <th style="padding:8px 4px;">Bulan Tagihan</th>
+                <th style="padding:8px 4px;">Total Nominal</th>
+                <th style="padding:8px 4px;">Pilih Metode Bayar</th>
+                <th style="padding:8px 4px;">Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tunggakanRows || `<tr><td colspan="4" style="text-align:center; padding:30px 0; color:#11754c; font-weight:600; background:#e2f7eb;">🎉 Luar biasa! Semua tagihan Anda telah LUNAS terbayar.</td></tr>`}
+            </tbody>
+          </table>
         </div>
-        <div class="card">
-          <div class="card-title">Riwayat Transaksi</div>
-          <table><tbody>${historyRows || '<tr><td colspan="5" style="text-align:center;">Belum ada riwayat.</td></tr>'}</tbody></table>
+
+        <div class="card" style="background:#fff; border:1px solid var(--paper-line); padding:20px; border-radius:6px;">
+          <div class="card-title" style="font-weight:bold; font-size:16px; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:8px; color:var(--ink-soft)">📜 Riwayat Transaksi Anda</div>
+          <table style="width:100%; border-collapse:collapse;">
+            <thead>
+              <tr style="text-align:left; border-bottom:1px solid #eee; font-size:13px; color:var(--ink-soft);">
+                <th style="padding:8px 4px;">Bulan</th>
+                <th style="padding:8px 4px;">Jumlah</th>
+                <th style="padding:8px 4px;">Waktu Transaksi</th>
+                <th style="padding:8px 4px;">Status</th>
+                <th style="padding:8px 4px;">Struk</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${historyRows || `<tr><td colspan="5" style="text-align:center; padding:20px 0; color:var(--ink-soft); font-style:italic;">Belum ada catatan pembayaran sebelumnya.</td></tr>`}
+            </tbody>
+          </table>
         </div>
       </div>
+
       <div>
-        <div class="card">
-          <div class="card-title">Virtual Account</div>
-          <div style="background:#fff;padding:10px;text-align:center;font-size:20px;font-weight:bold;border:1px dashed var(--brass);">${p.virtual_account}</div>
+        <div class="card" style="background:#fafafa; border:1px solid var(--paper-line); padding:15px; border-radius:6px; margin-bottom:20px;">
+          <div class="card-title" style="font-weight:bold; font-size:14px; margin-bottom:10px; color:var(--ledger-green)">🏦 Rekening Virtual Account Anda</div>
+          <p style="font-size:13px; color:var(--ink-soft); margin:0 0 8px 0;">Gunakan nomor ini jika Anda membayar melalui transfer ATM / Mobile Banking:</p>
+          <div style="background:#fff; border:1px dashed #bbb; padding:10px; text-align:center; font-size:18px; font-weight:bold; color:var(--ledger-green); font-family:monospace; border-radius:4px;">
+            ${p.virtual_account}
+          </div>
+        </div>
+
+        <div class="card" style="background:#fff; border:1px solid var(--paper-line); padding:15px; border-radius:6px; margin-bottom:20px;">
+          <div class="card-title" style="font-weight:bold; font-size:14px; margin-bottom:10px;">📋 Rincian Komponen Biaya</div>
+          <div style="display:flex; justify-content:space-between; font-size:14px; padding:6px 0; border-bottom:1px dashed #eee;">
+            <span>Retribusi Kios Pokok</span>
+            <span>${rupiah(biayaKios)}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:14px; padding:6px 0; border-bottom:1px dashed #eee;">
+            <span>Layanan Kebersihan</span>
+            <span>${p.kebersihan ? rupiah(BIAYA_KEBERSIHAN) : '<i style="color:red;">Tidak ikut</i>'}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:14px; padding:10px 0 0 0; font-weight:bold;">
+            <span>Total Tagihan Bulanan</span>
+            <span style="color:var(--ledger-green); font-size:16px;">${rupiah(totalBulanan)}</span>
+          </div>
+        </div>
+
+        <div class="card" style="background:#fffdf7; border:1px solid #f2e0bd; padding:15px; border-radius:6px;">
+          <div class="card-title" style="font-weight:bold; font-size:14px; margin-bottom:8px; color:#b25e00;">⚙️ Pengaturan Kebersihan Kios</div>
+          <p style="font-size:12.5px; color:var(--ink-soft); margin:0 0 12px 0;">Jika dimatikan, biaya kebersihan menjadi Rp 0, namun Anda bertanggung jawab membersihkan area kios secara mandiri.</p>
+          <div class="toggle-row" style="display:flex; gap:8px;">
+            <button style="flex:1; padding:6px; border:1px solid #ccc; background:${p.kebersihan?'#d4af37':'#fff'}; color:${p.kebersihan?'#000':'#333'}; font-weight:bold; cursor:pointer; border-radius:4px;" onclick="ubahKebersihan('${p.id}', true)">Ikut Layanan</button>
+            <button style="flex:1; padding:6px; border:1px solid #ccc; background:${!p.kebersihan?'#d4af37':'#fff'}; color:${!p.kebersihan?'#000':'#333'}; font-weight:bold; cursor:pointer; border-radius:4px;" onclick="ubahKebersihan('${p.id}', false)">Berhenti</button>
+          </div>
         </div>
       </div>
     </div>
   </div>
-  <div id="modal-slot"></div>`;
+  <div class="footer-note" style="text-align:center; margin-top:40px; font-size:12px; color:var(--ink-soft);">PUD Pasar Kota Medan &middot; Sistem Aplikasi Retribusi Kios Digital</div>
+  <div id="modal-slot"></div>
+  `;
   window.__pedagangCache = {p, payments};
 }
 
-function initiasiPembayaran(bulan){
-  const p = window.__pedagangCache.p;
-  const metode = document.getElementById(`select-payment-${bulan}`).value;
-  const total = BIAYA_KIOS + (p.kebersihan ? BIAYA_KEBERSIHAN : 0);
+async function ubahKebersihan(id, val){
+  const p = await dbGet('pedagang:'+id);
+  if(!p) return;
+  p.kebersihan = val;
+  await dbSet('pedagang:'+id, p);
+  drawPedagangDash();
+}
 
-  if (metode.includes('QRIS')) {
+/* ===================== Alur Pembayaran Terintegrasi QR ===================== */
+function initiasiPembayaran(bulan){
+  const id = state.session.id;
+  const p = window.__pedagangCache.p;
+  const selectMetode = document.getElementById(`select-payment-${bulan}`);
+  const metode = selectMetode ? selectMetode.value : 'QRIS Dinamis';
+
+  const biayaKios = BIAYA_KIOS;
+  const biayaKebersihan = p.kebersihan ? BIAYA_KEBERSIHAN : 0;
+  const total = biayaKios + biayaKebersihan;
+
+  if (metode.startsWith('QRIS') || metode.startsWith('E-Wallet')) {
     tampilkanModalQR(bulan, total, metode);
   } else {
     prosesEksekusiBayar(bulan, total, metode);
@@ -574,20 +701,45 @@ function initiasiPembayaran(bulan){
 }
 
 function tampilkanModalQR(bulan, total, metode) {
+  const p = window.__pedagangCache.p;
   const slot = document.getElementById('modal-slot');
+  
   slot.innerHTML = `
   <div class="modal-bg no-print">
     <div class="qr-modal-card">
       <button class="receipt-close" onclick="tutupStruk()">✕</button>
-      <h3>Pembayaran QRIS</h3>
+      <h3>Pembayaran Elektronik</h3>
+      <div class="sub-r">${metode.toUpperCase()} - PUD PASAR MEDAN</div>
+      <hr>
+      <div class="r-row"><span>Bulan</span><span>${formatBulanYM(bulan)}</span></div>
+      <div class="r-row"><span>Total Tagihan</span><span style="font-weight:bold; color:var(--ledger-green);">${rupiah(total)}</span></div>
+      
+      <!-- Kontainer QR Code -->
       <div class="qr-container" id="qr-renderer"></div>
+      
+      <p style="font-size:12px; text-align:center; color:var(--ink-soft); margin:0 0 10px 0; font-style:italic;">
+        *QR dinamis ini dibuat secara unik untuk transaksi Anda dan akan kedaluwarsa setelah dikonfirmasi.
+      </p>
+      
       <div class="qr-actions">
         <button onclick="tutupStruk()">Batal</button>
-        <button class="solid" onclick="prosesEksekusiBayar('${bulan}', ${total}, '${metode}')">Konfirmasi Sudah Bayar</button>
+        <button class="solid" onclick="prosesEksekusiBayar('${bulan}', ${total}, '${metode}')">Konfirmasi Telah Bayar</button>
       </div>
     </div>
   </div>`;
-  new QRCode(document.getElementById("qr-renderer"), { text: "PUD_MEDAN_"+total+"_"+bulan, width: 160, height: 160 });
+
+  // String payload QR unik yang di-refresh berdasarkan transaksi spesifik
+  const qrString = `PUD_PASAR_MEDAN_DYNAMIC_QR_${p.id}_${bulan}_${total}_${Date.now()}`;
+  
+  // Render QR Code ke dalam DOM
+  new QRCode(document.getElementById("qr-renderer"), {
+    text: qrString,
+    width: 160,
+    height: 160,
+    colorDark : "#122720",
+    colorLight : "#ffffff",
+    correctLevel : QRCode.CorrectLevel.H
+  });
 }
 
 async function prosesEksekusiBayar(bulan, total, metode){
@@ -597,76 +749,103 @@ async function prosesEksekusiBayar(bulan, total, metode){
   
   const payment = {
     id, no_kios: p.no_kios, nama: p.nama, bulan, biaya_kios: BIAYA_KIOS,
-    biaya_kebersihan: p.kebersihan ? BIAYA_KEBERSIHAN : 0, total, tanggal: t.tanggal, jam: t.jam,
+    biaya_kebersihan: p.kebersihan ? BIAYA_KEBERSIHAN : 0, total, tanggal: t.tanggal, jam: t.jam, timestamp: t.iso,
     metode_pembayaran: metode
   };
   
   await dbSet('payment:'+id+'-'+bulan, payment);
+  
+  // Refresh data dashboard utama pedagang
   await drawPedagangDash();
+  
+  // Otomatis buka struk resmi setelah pembayaran sukses
   bukaStruk(bulan);
 }
 
-/* ========================================================
-   FIX STRUK PEDAGANG: Render Langsung ke Layar & Print Area
-   ======================================================== */
 function bukaStruk(bulan){
   const {p, payments} = window.__pedagangCache;
-  const pay = payments[bulan] || state.strukPayload?.pay; 
+  const pay = payments[bulan];
   if(!pay) return;
-  
   state.strukPayload = {p, pay};
-
-  // HTML Bukti Transaksi Resmi yang Solid & Tidak Boleh Kosong
-  const templateHtml = `
-  <div class="receipt">
-    <h3>BUKTI PEMBAYARAN RESMI</h3>
-    <div class="sub-r">PUD PASAR KOTA MEDAN</div>
-    <hr>
-    <div class="r-row"><span>ID Pedagang</span><span class="mono"><b>${p.id}</b></span></div>
-    <div class="r-row"><span>Nama Pedagang</span><span>${esc(p.nama)}</span></div>
-    <div class="r-row"><span>No. Kios</span><span>${esc(p.no_kios)}</span></div>
-    <div class="r-row"><span>Bulan Retribusi</span><span><b>${formatBulanYM(pay.bulan)}</b></span></div>
-    <div class="r-row"><span>Metode Transaksi</span><span>${esc(pay.metode_pembayaran)}</span></div>
-    <hr>
-    <div class="r-row"><span>Biaya Retribusi Kios</span><span>${rupiah(pay.biaya_kios)}</span></div>
-    <div class="r-row"><span>Biaya Kebersihan</span><span>${rupiah(pay.biaya_kebersihan)}</span></div>
-    <hr>
-    <div class="r-total"><span>TOTAL LUNAS</span><span>${rupiah(pay.total)}</span></div>
-    <hr>
-    <div class="r-row"><span>Tanggal Transaksi</span><span>${pay.tanggal}</span></div>
-    <div class="r-row"><span>Waktu Pembayaran</span><span>${pay.jam} WIB</span></div>
-    <div class="receipt-stamp-wrap">
-      <div class="stamp">LUNAS<br><small>PUD PASAR</small></div>
-    </div>
-    <div class="receipt-actions no-print">
-      <button onclick="tutupStruk()">Tutup</button>
-      <button class="solid" onclick="window.print()">Cetak Dokumen</button>
-    </div>
-  </div>`;
-
-  // Render untuk Tampilan Pop Up di Monitor
-  document.getElementById('modal-slot').innerHTML = `
-    <div class="modal-bg no-print" onclick="if(event.target===this) tutupStruk()">
-      ${templateHtml}
-    </div>`;
-
-  // Render Siap Cetak untuk Driver Printer (Mencegah Blank/Kosong)
-  document.getElementById('print-section').innerHTML = templateHtml;
+  const slot = document.getElementById('modal-slot');
+  slot.innerHTML = tplStruk(p, pay);
 }
 
-function tutupStruk(){ 
-  document.getElementById('modal-slot').innerHTML=''; 
-  document.getElementById('print-section').innerHTML=''; 
+function tplStruk(p, pay){
+  return `
+  <div class="modal-bg no-print" onclick="if(event.target===this) tutupStruk()">
+    <div class="receipt printable-area">
+      <button class="receipt-close no-print" onclick="tutupStruk()">✕</button>
+      <h3>Bukti Pembayaran</h3>
+      <div class="sub-r">PUD PASAR KOTA MEDAN</div>
+      <div class="r-row"><span>ID Pedagang</span><span class="mono">${p.id}</span></div>
+      <div class="r-row"><span>Nama</span><span>${esc(p.nama)}</span></div>
+      <div class="r-row"><span>No. Kios</span><span>${esc(p.no_kios)}</span></div>
+      <div class="r-row"><span>Bulan</span><span>${formatBulanYM(pay.bulan)}</span></div>
+      <div class="r-row"><span>Metode</span><span style="font-weight:600; color:var(--brass);">${esc(pay.metode_pembayaran || 'QRIS Dinamis')}</span></div>
+      <hr>
+      <div class="r-row"><span>Biaya Kios</span><span>${rupiah(pay.biaya_kios)}</span></div>
+      <div class="r-row"><span>Biaya Kebersihan</span><span>${pay.biaya_kebersihan? rupiah(pay.biaya_kebersihan) : 'Rp 0'}</span></div>
+      <hr>
+      <div class="r-total"><span>TOTAL</span><span>${rupiah(pay.total)}</span></div>
+      <hr>
+      <div class="r-row"><span>Tanggal</span><span class="mono">${pay.tanggal}</span></div>
+      <div class="r-row"><span>Jam</span><span class="mono">${pay.jam}</span></div>
+      <div class="receipt-stamp-wrap"><div class="stamp">LUNAS<br>PUD PASAR</div></div>
+      <div class="receipt-actions no-print">
+        <button onclick="downloadStruk()">Unduh Struk</button>
+        <button class="solid" onclick="window.print()">Cetak</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function tutupStruk(){ document.getElementById('modal-slot').innerHTML=''; }
+
+function downloadStruk(){
+  const {p, pay} = state.strukPayload;
+  const lines = [
+    '================================',
+    '   BUKTI PEMBAYARAN KIOS PASAR',
+    '     PUD PASAR KOTA MEDAN',
+    '================================',
+    'ID Pedagang   : ' + p.id,
+    'Nama          : ' + p.nama,
+    'No. Kios      : ' + p.no_kios,
+    'Bulan         : ' + formatBulanYM(pay.bulan),
+    'Metode Bayar  : ' + (pay.metode_pembayaran || 'QRIS Dinamis'),
+    '--------------------------------',
+    'Biaya Kios       : ' + rupiah(pay.biaya_kios),
+    'Biaya Kebersihan : ' + (pay.biaya_kebersihan ? rupiah(pay.biaya_kebersihan) : 'Rp 0'),
+    '--------------------------------',
+    'TOTAL            : ' + rupiah(pay.total),
+    '--------------------------------',
+    'Tanggal Bayar : ' + pay.tanggal,
+    'Jam Bayar     : ' + pay.jam,
+    'Status        : LUNAS',
+    '================================',
+    'Terima kasih atas pembayaran Anda',
+    '================================'
+  ];
+  const blob = new Blob([lines.join('\n')], {type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'Struk_'+p.id+'_'+pay.bulan+'.txt';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 }
 
 /* ===================== Pengurus Dashboard ===================== */
 async function drawPengurusDash(){
+  app.innerHTML = `<div class="empty-state">Memuat data pengurus…</div>`;
+  const admin = await dbGet('pengurus:admin');
   const keys = await dbList('pedagang:');
   let semuaPedagang = [];
   for(const k of keys){ const d = await dbGet(k); if(d) semuaPedagang.push(d); }
   semuaPedagang.sort((a,b)=> a.id.localeCompare(b.id));
 
   const rows = [];
+  let totalTunggakanSemua = 0;
   for(const p of semuaPedagang){
     const months = enumerateMonths(p.terdaftar_bulan);
     let unpaid = [];
@@ -676,93 +855,143 @@ async function drawPengurusDash(){
       if(pay){ if(!lastPaid || m > lastPaid.bulan) lastPaid = pay; }
       else unpaid.push(m);
     }
-    const tunggakanRp = unpaid.length * (BIAYA_KIOS + (p.kebersihan? BIAYA_KEBERSIHAN:0));
+    const biayaBulanan = BIAYA_KIOS + (p.kebersihan? BIAYA_KEBERSIHAN:0);
+    const tunggakanRp = unpaid.length * biayaBulanan;
+    totalTunggakanSemua += tunggakanRp;
+    
+    if(!p.virtual_account){
+      p.virtual_account = '8877' + String(p.id.replace('PD','')).padStart(5, '0');
+    }
     rows.push({p, unpaidCount:unpaid.length, tunggakanRp, lastPaid});
   }
+
+  window.__pengurusRows = rows;
+  const tableRows = buildPengurusRowsHTML(rows, state.pengurusFilter);
 
   app.innerHTML = `
   <div class="topbar">
     <div class="brand">Buku Kas Pasar<small>Akun Pengurus</small></div>
-    <button class="logout-btn" onclick="logout()">Keluar</button>
+    <div class="who"><span class="name">${esc(admin.nama)}</span>
+      <button class="logout-btn" onclick="logout()">Keluar</button>
+    </div>
   </div>
+  
   <div class="pengurus-nav no-print">
     <button class="nav-tab ${state.pengurusActiveTab==='pedagang'?'active':''}" onclick="state.pengurusActiveTab='pedagang'; drawScreen();">Data Pedagang</button>
     <button class="nav-tab ${state.pengurusActiveTab==='laporan'?'active':''}" onclick="state.pengurusActiveTab='laporan'; drawScreen();">Laporan Pembayaran</button>
   </div>
+
   <div class="content">
+    <div class="stat-strip">
+      <div class="stat-box"><div class="num">${semuaPedagang.length}</div><div class="lbl">Total Pedagang</div></div>
+      <div class="stat-box"><div class="num">${rows.filter(r=>r.unpaidCount===0).length}</div><div class="lbl">Lunas Bulan Ini</div></div>
+      <div class="stat-box"><div class="num">${rupiah(totalTunggakanSemua)}</div><div class="lbl">Total Tunggakan</div></div>
+    </div>
+
     ${state.pengurusActiveTab === 'pedagang' ? `
-      <div class="card">
-        <table>
-          <thead><tr><th>ID</th><th>Nama</th><th>Kios</th><th>Status</th><th>Tunggakan</th></tr></thead>
-          <tbody>${rows.map(r=>`<tr><td>${r.p.id}</td><td>${esc(r.p.nama)}</td><td>${esc(r.p.no_kios)}</td><td>${r.unpaidCount===0?'LUNAS':'TUNGGAK'}</td><td>${rupiah(r.tunggakanRp)}</td></tr>`).join('')}</tbody>
-        </table>
-      </div>` : `
-      <div class="card">
-        <div class="search-bar no-print">
-          <input type="month" id="laporan-bulan-input" value="${state.laporanBulan}" onchange="state.laporanBulan=this.value; renderLaporan()">
-          <button class="btn-primary" style="width:auto;margin:0;" onclick="window.print()">🖶 Jalankan Cetak Sekarang</button>
-        </div>
-        <div id="laporan-slot"></div>
-      </div>`}
-  </div>`;
+    <div class="card">
+      <div class="card-title">Data Pedagang &amp; Status Pembayaran (Waktu Nyata)</div>
+      <div class="search-bar no-print">
+        <input placeholder="Cari ID, No. Kios, Virtual Account, atau Nama…" value="${esc(state.pengurusFilter||'')}" oninput="state.pengurusFilter=this.value; drawPengurusDashSoft()">
+        <button class="btn-outline" style="width:auto; margin:0; padding:9px 16px;" onclick="drawScreen()">↻ Segarkan</button>
+      </div>
+      <table>
+        <thead><tr><th>ID Pedagang</th><th>Nama</th><th>No. Kios</th><th>Virtual Account</th><th>Status</th><th>Tunggakan</th><th>Bayar Terakhir</th></tr></thead>
+        <tbody id="pengurus-table-body">${tableRows}</tbody>
+      </table>
+    </div>
+    ` : ''}
+
+    ${state.pengurusActiveTab === 'laporan' ? `
+    <div class="card">
+      <div class="card-title">Laporan Pemasukan Bulanan</div>
+      <div class="search-bar no-print">
+        <input type="month" id="laporan-bulan-input" value="${state.laporanBulan}" onchange="state.laporanBulan=this.value; renderLaporan()">
+        <button class="btn-outline" style="width:auto; margin:0; padding:9px 16px;" onclick="window.print()">🖶 Cetak Laporan</button>
+      </div>
+      <div id="laporan-slot"></div>
+    </div>
+    ` : ''}
+    
+  </div>
+  <div class="footer-note">PUD Pasar Kota Medan — Rekapitulasi Retribusi Kios &amp; Kebersihan Pasar</div>
+  `;
   
-  if(state.pengurusActiveTab === 'laporan'){ await renderLaporan(); }
+  window.__pengurusCache = {semuaPedagang};
+  if(state.pengurusActiveTab === 'laporan'){
+    await renderLaporan();
+  }
 }
 
-/* ========================================================
-   FIX LAPORAN ADMIN: Inject Data ke Dua Tempat Sekaligus
-   ======================================================== */
+function buildPengurusRowsHTML(rows, filterText){
+  const filter = (filterText||'').trim().toLowerCase();
+  const filteredRows = filter ? rows.filter(r => r.p.id.toLowerCase().includes(filter) || String(r.p.no_kios).toLowerCase().includes(filter) || r.p.nama.toLowerCase().includes(filter) || (r.p.virtual_account && r.p.virtual_account.includes(filter))) : rows;
+  return filteredRows.map(r=>{
+    const statusHtml = r.unpaidCount===0
+      ? `<span class="tag paid">LUNAS</span>`
+      : `<span class="tag unpaid">TUNGGAK ${r.unpaidCount} BLN</span>`;
+    const waktuHtml = r.lastPaid
+      ? `<span class="mono" style="font-size:12.5px;">${r.lastPaid.tanggal}<br>${r.lastPaid.jam}</span>`
+      : `<span style="color:var(--ink-soft); font-style:italic; font-size:12.5px;">belum pernah bayar</span>`;
+    return `<tr>
+      <td class="mono">${r.p.id}</td>
+      <td>${esc(r.p.nama)}</td>
+      <td>${esc(r.p.no_kios)}</td>
+      <td class="mono" style="font-size:13px; color:var(--brass); font-weight:600;">${r.p.virtual_account || '-'}</td>
+      <td>${statusHtml}</td>
+      <td>${rupiah(r.tunggakanRp)}</td>
+      <td>${waktuHtml}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="7" style="text-align:center; color:var(--ink-soft); font-style:italic;">Tidak ada data ditemukan</td></tr>`;
+}
+
+function drawPengurusDashSoft(){
+  const body = document.getElementById('pengurus-table-body');
+  if(body && window.__pengurusRows){
+    body.innerHTML = buildPengurusRowsHTML(window.__pengurusRows, state.pengurusFilter);
+  }
+}
+
 async function renderLaporan(){
   const bulan = state.laporanBulan || ymNow();
   const keys = await dbList('payment:');
   const matching = keys.filter(k => k.endsWith('-'+bulan));
   let items = [];
   for(const k of matching){ const d = await dbGet(k); if(d) items.push(d); }
+  items.sort((a,b)=> a.id.localeCompare(b.id));
 
   const totalKios = items.reduce((s,x)=>s+x.biaya_kios,0);
   const totalKebersihan = items.reduce((s,x)=>s+x.biaya_kebersihan,0);
+  const totalSemua = totalKios + totalKebersihan;
 
-  const tableRows = items.map(x=>`
+  const rows = items.map(x=>`
     <tr>
-      <td>${x.id}</td>
+      <td class="mono">${x.id}</td>
       <td>${esc(x.nama)}</td>
       <td>${esc(x.no_kios)}</td>
       <td>${rupiah(x.biaya_kios)}</td>
-      <td>${rupiah(x.biaya_kebersihan)}</td>
+      <td>${x.biaya_kebersihan? rupiah(x.biaya_kebersihan):'Rp 0'}</td>
       <td><b>${rupiah(x.total)}</b></td>
-      <td>${x.tanggal}</td>
-    </tr>`).join('') || `<tr><td colspan="7" style="text-align:center;">Belum ada rekap transaksi bulan ini.</td></tr>`;
+      <td class="mono" style="font-size:12.5px;">${x.tanggal}, ${x.jam}</td>
+    </tr>`).join('') || `<tr><td colspan="7" style="text-align:center; color:var(--ink-soft); font-style:italic;">Belum ada pembayaran pada bulan ini</td></tr>`;
 
-  const laporanFinalHtml = `
-    <div style="background:#fff; padding:15px; color:#000;">
-      <h2 style="text-align:center;margin:0;">REKAPITULASI RETRIBUSI PASAR</h2>
-      <h4 style="text-align:center;margin:5px 0 15px 0;font-weight:normal;">PUD PASAR MEDAN — PERIODE ${formatBulanYM(bulan).toUpperCase()}</h4>
-      
-      <table border="1">
-        <thead>
-          <tr style="background:#eee;">
-            <th>ID Pedagang</th>
-            <th>Nama</th>
-            <th>Kios</th>
-            <th>Nominal Kios</th>
-            <th>Kebersihan</th>
-            <th>Total Bayar</th>
-            <th>Tanggal Lunas</th>
-          </tr>
-        </thead>
-        <tbody>${tableRows}</tbody>
-      </table>
-      <div style="margin-top:15px;text-align:right;font-weight:bold;font-size:16px;">
-        TOTAL PEMASUKAN BULANAN: ${rupiah(totalKios + totalKebersihan)}
-      </div>
-    </div>`;
-
-  // Suntik ke Monitor UI Admin
   const slot = document.getElementById('laporan-slot');
-  if(slot) slot.innerHTML = laporanFinalHtml;
-
-  // Suntik ke Mesin Cetak Kertas (Wajib Ada agar Browser Tidak Blank Saat Tombol Print Ditekan)
-  document.getElementById('print-section').innerHTML = laporanFinalHtml;
+  if(!slot) return;
+  slot.innerHTML = `
+    <div class="printable-area">
+      <div style="text-align:center; margin-bottom:14px;" class="print-only-header">
+        <h3>Laporan Pemasukan — ${formatBulanYM(bulan)}</h3>
+      </div>
+      <div class="stat-strip" style="grid-template-columns:repeat(3,1fr); margin-bottom:15px;">
+        <div class="stat-box"><div class="num">${rupiah(totalKios)}</div><div class="lbl">Retribusi Kios</div></div>
+        <div class="stat-box"><div class="num">${rupiah(totalKebersihan)}</div><div class="lbl">Retribusi Kebersihan</div></div>
+        <div class="stat-box"><div class="num">${rupiah(totalSemua)}</div><div class="lbl">Total ${formatBulanYM(bulan)}</div></div>
+      </div>
+      <table>
+        <thead><tr><th>ID</th><th>Nama</th><th>Kios</th><th>Kios (Rp)</th><th>Kebersihan (Rp)</th><th>Total</th><th>Waktu Bayar</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
 
 /* ===================== Boot ===================== */
